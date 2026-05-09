@@ -43,4 +43,84 @@ public sealed class WriteTools(IfcService ifc, ILogger<WriteTools> logger)
         logger.LogDebug("save_model_as: {FilePath}", filePath);
         return await Task.Run(() => new SaveResult(ifc.SaveModelAs(filePath)));
     }
+
+    [McpServerTool(Name = "create_element")]
+    [Description("Create a new IFC element by class name (e.g. 'IfcWall', 'IfcDoor') and place it in a storey. Requires an active transaction.")]
+    public async Task<CreatedElement> CreateElement(
+        [Description("IFC class name, e.g. 'IfcWall', 'IfcDoor', 'IfcWindow'")] string ifcType,
+        [Description("Name for the new element")] string name,
+        [Description("GlobalId of the IfcBuildingStorey to place the element in")] string storeyGuid)
+    {
+        logger.LogDebug("create_element: {IfcType} {Name} in {Storey}", ifcType, name, storeyGuid);
+        return await Task.Run(() =>
+        {
+            var model = ifc.GetModelWithTransactionOrThrow();
+
+            var storey = model.Instances.OfType<IIfcBuildingStorey>()
+                             .FirstOrDefault(s => s.GlobalId.ToString() == storeyGuid)
+                         ?? throw new InvalidOperationException($"Storey '{storeyGuid}' not found");
+
+            var normalizedType = ifcType.StartsWith("Ifc", StringComparison.OrdinalIgnoreCase) ? ifcType : "Ifc" + ifcType;
+
+            var ifcAssembly = typeof(IfcWall).Assembly;
+            var entityType = ifcAssembly.GetTypes()
+                .FirstOrDefault(t => string.Equals(t.Name, normalizedType, StringComparison.OrdinalIgnoreCase)
+                                     && typeof(IIfcElement).IsAssignableFrom(t)
+                                     && !t.IsAbstract)
+                ?? throw new InvalidOperationException(
+                    $"Unknown or abstract IFC element type '{ifcType}'. Use concrete types like IfcWall, IfcDoor, IfcWindow, IfcSlab, etc.");
+
+            var element = (IIfcElement)model.Instances.New(entityType);
+            element.Name = name;
+            var concreteElement = (IfcProduct)element;
+
+            var rel = model.Instances.OfType<IIfcRelContainedInSpatialStructure>()
+                          .FirstOrDefault(r => r.RelatingStructure == storey);
+            if (rel is not null)
+            {
+                rel.RelatedElements.Add(concreteElement);
+            }
+            else
+            {
+                model.Instances.New<IfcRelContainedInSpatialStructure>(r =>
+                {
+                    r.RelatingStructure = (IfcBuildingStorey)storey;
+                    r.RelatedElements.Add(concreteElement);
+                });
+            }
+
+            return new CreatedElement(
+                element.GlobalId.ToString(),
+                element.Name?.ToString() ?? string.Empty,
+                element.GetType().Name);
+        });
+    }
+
+    [McpServerTool(Name = "delete_element")]
+    [Description("Delete an element by GlobalId. Removes the element and cleans up spatial containment relationships. Requires an active transaction.")]
+    public async Task<string> DeleteElement(
+        [Description("GlobalId of the element to delete")] string guid)
+    {
+        logger.LogDebug("delete_element: {Guid}", guid);
+        return await Task.Run(() =>
+        {
+            var model = ifc.GetModelWithTransactionOrThrow();
+
+            var element = model.Instances.OfType<IIfcElement>()
+                              .FirstOrDefault(e => e.GlobalId.ToString() == guid)
+                          ?? throw new InvalidOperationException($"Element '{guid}' not found");
+
+            foreach (var rel in model.Instances.OfType<IIfcRelContainedInSpatialStructure>().ToList())
+                rel.RelatedElements.Remove(element);
+
+            foreach (var rel in model.Instances.OfType<IIfcRelDefinesByProperties>().ToList())
+                rel.RelatedObjects.Remove(element);
+
+            foreach (var rel in model.Instances.OfType<IIfcRelDefinesByType>().ToList())
+                rel.RelatedObjects.Remove(element);
+
+            model.Delete(element);
+            return $"Element '{guid}' deleted.";
+        });
+    }
 }
