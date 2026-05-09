@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"C:/Users/TimAikin/.nuget/packages/xbim.ifc/6.0.442\" -name \"*.xml\" 2>/dev/null)",
+      "Read(//c/Users/TimAikin/.nuget/packages/xbim.ifc/6.0.442/**)"
+    ]
+  }
+}

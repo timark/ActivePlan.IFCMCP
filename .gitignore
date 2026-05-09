@@ -1,0 +1,14 @@
+# Build output
+bin/
+obj/
+publish/
+
+# User/IDE files
+.vs/
+*.user
+*.suo
+*.exe
+
+# Project-specific
+CLAUDE.md
+docs/
