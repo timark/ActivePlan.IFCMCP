@@ -1,6 +1,6 @@
 # IfcMcpServer
 
-An MCP (Model Context Protocol) server that lets AI assistants query IFC building models. Built with .NET 10 and [xBIM](https://docs.xbim.net/), it exposes IFC file contents over stdio so tools like Claude can explore spatial hierarchies, look up elements, read property sets, and search across a model.
+An MCP (Model Context Protocol) server that lets AI assistants read and write IFC building models. Built with .NET 10 and [xBIM](https://docs.xbim.net/), it exposes IFC file contents over stdio so tools like Claude can explore spatial hierarchies, look up elements, read property sets, create and modify elements, and save changes back to disk.
 
 ## Prerequisites
 
@@ -73,19 +73,48 @@ Once registered, Claude can call any of the tools below during a conversation.
 | `get_type_components` | All element instances of a given type object |
 | `get_type_properties` | Property sets defined on a type object |
 
+### Transactions
+
+| Tool | Description |
+|------|-------------|
+| `begin_transaction` | Start a new transaction (required before any write operation) |
+| `commit_transaction` | Commit the active transaction (changes stay in memory) |
+| `rollback_transaction` | Discard all changes since begin_transaction |
+
+### Write Operations
+
+| Tool | Description |
+|------|-------------|
+| `create_model` | Create a new empty IFC4 model with Project/Site/Building scaffolding |
+| `create_element` | Add an element by IFC class name and assign to a storey |
+| `delete_element` | Remove an element and its relationships by GUID |
+| `set_property` | Set a property value (creates the pset if needed) |
+| `delete_property` | Remove a property from a pset |
+| `create_storey` | Add a building storey with name and elevation |
+| `create_space` | Add a space within a storey |
+
+### Persistence
+
+| Tool | Description |
+|------|-------------|
+| `save_model` | Save to the file path the model was loaded from |
+| `save_model_as` | Save to a new file path |
+
 ## Project Structure
 
 ```
 IfcMcpServer/
   Program.cs              # Host setup, DI, MCP stdio wiring
   Services/
-    IfcService.cs         # Singleton wrapping IfcStore (load/query/close)
+    IfcService.cs         # Singleton wrapping IfcStore (load/query/close/create/save + transactions)
   Tools/
     ModelTools.cs         # load_model, get_model_info, close_model
     SpatialTools.cs       # get_spatial_hierarchy, get_storeys, get_spaces
     ElementTools.cs       # get_elements_by_type, get_element_by_guid, search_elements
     PropertyTools.cs      # get_property_sets, get_property, get_cobie_data, find_elements_by_property
     TypeTools.cs          # get_types, get_type_components, get_type_properties
+    TransactionTools.cs   # begin_transaction, commit_transaction, rollback_transaction
+    WriteTools.cs         # create_model, create/delete element, set/delete property, create storey/space, save
   Models/
     IfcModels.cs          # C# record return types (no xBIM types exposed to clients)
 ```
