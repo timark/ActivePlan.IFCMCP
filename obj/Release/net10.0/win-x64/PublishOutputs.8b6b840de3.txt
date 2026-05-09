@@ -1,0 +1,2 @@
+D:\Users\TimAikin\Documents\GitHub\IfcMcpServer\publish\IfcMcpServer.pdb
+D:\Users\TimAikin\Documents\GitHub\IfcMcpServer\publish\IfcMcpServer.exe
