@@ -223,4 +223,86 @@ public sealed class WriteTools(IfcService ifc, ILogger<WriteTools> logger)
             return $"Property '{psetName}.{propertyName}' removed from element '{elementGuid}'.";
         });
     }
+
+    [McpServerTool(Name = "create_storey")]
+    [Description("Create a new building storey and aggregate it under the first building in the model. Requires an active transaction.")]
+    public async Task<CreatedSpatialElement> CreateStorey(
+        [Description("Name for the new storey")] string name,
+        [Description("Elevation in metres (optional)")] double? elevation = null)
+    {
+        logger.LogDebug("create_storey: {Name} elev={Elevation}", name, elevation);
+        return await Task.Run(() =>
+        {
+            var model = ifc.GetModelWithTransactionOrThrow();
+
+            var building = model.Instances.OfType<IIfcBuilding>().FirstOrDefault()
+                           ?? throw new InvalidOperationException("No IfcBuilding found in the model");
+
+            var storey = model.Instances.New<IfcBuildingStorey>(s =>
+            {
+                s.Name = name;
+                if (elevation.HasValue)
+                    s.Elevation = elevation.Value;
+            });
+
+            var rel = model.Instances.OfType<IIfcRelAggregates>()
+                          .FirstOrDefault(r => r.RelatingObject == building);
+            if (rel is not null)
+            {
+                rel.RelatedObjects.Add(storey);
+            }
+            else
+            {
+                model.Instances.New<IfcRelAggregates>(r =>
+                {
+                    r.RelatingObject = (IfcBuilding)building;
+                    r.RelatedObjects.Add(storey);
+                });
+            }
+
+            return new CreatedSpatialElement(storey.GlobalId.ToString(), storey.Name?.ToString() ?? string.Empty);
+        });
+    }
+
+    [McpServerTool(Name = "create_space")]
+    [Description("Create a new space and aggregate it under a specified storey. Requires an active transaction.")]
+    public async Task<CreatedSpatialElement> CreateSpace(
+        [Description("Name for the new space")] string name,
+        [Description("GlobalId of the storey to place the space in")] string storeyGuid,
+        [Description("Optional long name for the space")] string? longName = null)
+    {
+        logger.LogDebug("create_space: {Name} in {Storey}", name, storeyGuid);
+        return await Task.Run(() =>
+        {
+            var model = ifc.GetModelWithTransactionOrThrow();
+
+            var storey = model.Instances.OfType<IIfcBuildingStorey>()
+                             .FirstOrDefault(s => s.GlobalId.ToString() == storeyGuid)
+                         ?? throw new InvalidOperationException($"Storey '{storeyGuid}' not found");
+
+            var space = model.Instances.New<IfcSpace>(s =>
+            {
+                s.Name = name;
+                if (longName is not null)
+                    s.LongName = longName;
+            });
+
+            var rel = model.Instances.OfType<IIfcRelAggregates>()
+                          .FirstOrDefault(r => r.RelatingObject == storey);
+            if (rel is not null)
+            {
+                rel.RelatedObjects.Add(space);
+            }
+            else
+            {
+                model.Instances.New<IfcRelAggregates>(r =>
+                {
+                    r.RelatingObject = (IfcBuildingStorey)storey;
+                    r.RelatedObjects.Add(space);
+                });
+            }
+
+            return new CreatedSpatialElement(space.GlobalId.ToString(), space.Name?.ToString() ?? string.Empty);
+        });
+    }
 }
