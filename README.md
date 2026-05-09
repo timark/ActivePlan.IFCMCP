@@ -1,6 +1,6 @@
 # IfcMcpServer
 
-An MCP (Model Context Protocol) server that lets AI assistants read and write IFC building models. Built with .NET 10 and [xBIM](https://docs.xbim.net/), it exposes IFC file contents over stdio so tools like Claude can explore spatial hierarchies, look up elements, read property sets, create and modify elements, and save changes back to disk.
+An MCP (Model Context Protocol) server that lets AI assistants read and write IFC building models. Built with .NET 10 and [xBIM](https://docs.xbim.net/), it exposes IFC file contents over stdio so tools like Claude Code, Gemini CLI, and OpenAI Codex can explore spatial hierarchies, look up elements, read property sets, create and modify elements, and save changes back to disk.
 
 ## Prerequisites
 
@@ -16,18 +16,45 @@ dotnet build
 dotnet run -- "path/to/model.ifc"
 ```
 
-## Registering with Claude Code
+## Registering with AI Coding Assistants
+
+First, publish a self-contained binary:
+
+```bash
+dotnet publish -c Release -r win-x64 -o ./publish
+```
+
+### Claude Code
 
 ```bash
 # Development (builds on the fly)
 claude mcp add ifc-mcp --scope user -- dotnet run --project /path/to/IfcMcpServer
 
 # Published binary
-dotnet publish -c Release -r win-x64
 claude mcp add ifc-mcp --scope user -- /path/to/publish/IfcMcpServer.exe
 ```
 
-Once registered, Claude can call any of the tools below during a conversation.
+### Gemini CLI
+
+Add to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "ifc-mcp": {
+      "command": "/path/to/publish/IfcMcpServer.exe"
+    }
+  }
+}
+```
+
+### OpenAI Codex CLI
+
+```bash
+codex mcp add ifc-mcp -- /path/to/publish/IfcMcpServer.exe
+```
+
+Once registered, the assistant can call any of the tools below during a conversation.
 
 ## Available Tools
 
