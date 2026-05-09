@@ -59,3 +59,11 @@ public record SpaceNode(
     string Guid,
     string Name,
     string? LongName);
+
+public record CreatedElement(string Guid, string Name, string IfcType);
+
+public record CreatedSpatialElement(string Guid, string Name);
+
+public record TransactionResult(string Status);
+
+public record SaveResult(string FilePath);
