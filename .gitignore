@@ -2,6 +2,7 @@
 bin/
 obj/
 publish/
+.claude/
 
 # User/IDE files
 .vs/
