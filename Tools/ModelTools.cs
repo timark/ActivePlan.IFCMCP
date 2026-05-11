@@ -10,9 +10,9 @@ namespace IfcMcpServer.Tools;
 public sealed class ModelTools(IfcService ifc, ILogger<ModelTools> logger)
 {
     [McpServerTool(Name = "load_model")]
-    [Description("Open an IFC file and load it into memory. Returns schema, project name, site name, building name, and element counts. Pass the full path to the .ifc file.")]
+    [Description("Open an IFC model file and load it into memory. Accepts .ifc, .ifcxml, .ifczip, and .xbim files. Automatically creates and uses a .xbim cache for faster subsequent loads. Returns schema, project name, site name, building name, element counts, and cache status.")]
     public async Task<ModelMetadata> LoadModel(
-        [Description("Full path to the IFC file to load")] string filePath)
+        [Description("Full path to the IFC model file (.ifc, .ifcxml, .ifczip, or .xbim)")] string filePath)
     {
         logger.LogDebug("load_model: {FilePath}", filePath);
         return await Task.Run(() => ifc.LoadModel(filePath));

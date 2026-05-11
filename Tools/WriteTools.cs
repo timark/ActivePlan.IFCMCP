@@ -36,9 +36,9 @@ public sealed class WriteTools(IfcService ifc, ILogger<WriteTools> logger)
     }
 
     [McpServerTool(Name = "save_model_as")]
-    [Description("Save the model to a new file path. Updates the stored path so subsequent save_model calls use it.")]
+    [Description("Save the model to a new file path. Supports .ifc, .ifcxml, .ifczip, and .xbim output formats (detected by extension). Updates the stored path so subsequent save_model calls use it.")]
     public async Task<SaveResult> SaveModelAs(
-        [Description("Full path for the output .ifc file")] string filePath)
+        [Description("Full path for the output file (.ifc, .ifcxml, .ifczip, or .xbim)")] string filePath)
     {
         logger.LogDebug("save_model_as: {FilePath}", filePath);
         return await Task.Run(() => new SaveResult(ifc.SaveModelAs(filePath)));
