@@ -18,6 +18,25 @@ public sealed class IfcService(ILogger<IfcService> logger)
     private IfcStore? _model;
     private ModelMetadata? _metadata;
     private ITransaction? _transaction;
+    private string? _sourcePath;
+    private string? _cachePath;
+
+    private static readonly HashSet<string> CacheEligibleExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { ".ifc", ".ifcxml", ".ifczip" };
+
+    internal static bool IsCacheEligible(string filePath)
+        => CacheEligibleExtensions.Contains(Path.GetExtension(filePath));
+
+    internal static StorageType GetStorageType(string filePath)
+        => Path.GetExtension(filePath).ToLowerInvariant() switch
+        {
+            ".ifc" => StorageType.Ifc,
+            ".ifcxml" => StorageType.IfcXml,
+            ".ifczip" => StorageType.IfcZip,
+            ".xbim" => StorageType.Xbim,
+            _ => throw new InvalidOperationException(
+                $"Unsupported file extension '{Path.GetExtension(filePath)}'. Use .ifc, .ifcxml, .ifczip, or .xbim.")
+        };
 
     public bool HasActiveTransaction => _transaction is not null;
 
@@ -28,12 +47,60 @@ public sealed class IfcService(ILogger<IfcService> logger)
             _model?.Dispose();
             _model = null;
             _metadata = null;
+            _sourcePath = null;
+            _cachePath = null;
 
             logger.LogInformation("Loading IFC model from {FilePath}", filePath);
-            _model = IfcStore.Open(filePath);
 
-            _metadata = BuildMetadata(filePath, _model);
-            logger.LogInformation("Loaded model: schema={Schema}, project={Project}", _metadata.Schema, _metadata.ProjectName);
+            string loadedFrom;
+
+            if (IsCacheEligible(filePath))
+            {
+                var xbimPath = Path.ChangeExtension(filePath, ".xbim");
+
+                if (File.Exists(xbimPath)
+                    && File.GetLastWriteTimeUtc(xbimPath) >= File.GetLastWriteTimeUtc(filePath))
+                {
+                    logger.LogInformation("Loading cached .xbim for {FilePath}", filePath);
+                    _model = IfcStore.Open(xbimPath);
+                    loadedFrom = "cache";
+                }
+                else
+                {
+                    _model = IfcStore.Open(filePath);
+                    loadedFrom = "parsed";
+
+                    try
+                    {
+                        _model.SaveAs(xbimPath, StorageType.Xbim);
+                        logger.LogInformation("Created .xbim cache at {XbimPath}", xbimPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to create .xbim cache at {XbimPath} — continuing without cache", xbimPath);
+                        xbimPath = null;
+                    }
+                }
+
+                _sourcePath = filePath;
+                _cachePath = xbimPath;
+            }
+            else
+            {
+                _model = IfcStore.Open(filePath);
+                _sourcePath = null;
+                _cachePath = null;
+                loadedFrom = "direct";
+            }
+
+            _metadata = BuildMetadata(
+                _sourcePath ?? filePath,
+                _cachePath,
+                loadedFrom,
+                _model);
+
+            logger.LogInformation("Loaded model: schema={Schema}, project={Project}, loadedFrom={LoadedFrom}",
+                _metadata.Schema, _metadata.ProjectName, _metadata.LoadedFrom);
             return _metadata;
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
@@ -99,6 +166,8 @@ public sealed class IfcService(ILogger<IfcService> logger)
         _model?.Dispose();
         _model = null;
         _metadata = null;
+        _sourcePath = null;
+        _cachePath = null;
         logger.LogInformation("Model closed");
     }
 
@@ -156,7 +225,9 @@ public sealed class IfcService(ILogger<IfcService> logger)
             txn.Commit();
         }
 
-        _metadata = BuildMetadata(string.Empty, _model);
+        _sourcePath = null;
+        _cachePath = null;
+        _metadata = BuildMetadata(string.Empty, null, "created", _model);
         logger.LogInformation("Created new IFC4 model: project={Project}", projectName);
         return _metadata;
     }
@@ -164,23 +235,85 @@ public sealed class IfcService(ILogger<IfcService> logger)
     public string SaveModel()
     {
         var model = GetModelOrThrow();
-        if (_metadata is null || string.IsNullOrEmpty(_metadata.FilePath))
-            throw new InvalidOperationException("No file path — use save_model_as to specify a path");
-        model.SaveAs(_metadata.FilePath);
-        logger.LogInformation("Model saved to {FilePath}", _metadata.FilePath);
-        return _metadata.FilePath;
+
+        if (_sourcePath is not null)
+        {
+            model.SaveAs(_sourcePath, GetStorageType(_sourcePath));
+            logger.LogInformation("Model saved to {FilePath}", _sourcePath);
+
+            if (_cachePath is not null)
+            {
+                try
+                {
+                    model.SaveAs(_cachePath, StorageType.Xbim);
+                    logger.LogInformation("Cache updated at {CachePath}", _cachePath);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to update .xbim cache at {CachePath}", _cachePath);
+                }
+            }
+
+            return _sourcePath;
+        }
+
+        if (_cachePath is not null)
+        {
+            model.SaveAs(_cachePath, StorageType.Xbim);
+            logger.LogInformation("Model saved to {CachePath}", _cachePath);
+            return _cachePath;
+        }
+
+        if (_metadata is not null && !string.IsNullOrEmpty(_metadata.FilePath))
+        {
+            model.SaveAs(_metadata.FilePath);
+            logger.LogInformation("Model saved to {FilePath}", _metadata.FilePath);
+            return _metadata.FilePath;
+        }
+
+        throw new InvalidOperationException("No file path — use save_model_as to specify a path");
     }
 
     public string SaveModelAs(string filePath)
     {
         var model = GetModelOrThrow();
-        model.SaveAs(filePath);
-        _metadata = BuildMetadata(filePath, model);
+        var storageType = GetStorageType(filePath);
+
+        model.SaveAs(filePath, storageType);
         logger.LogInformation("Model saved to {FilePath}", filePath);
+
+        if (storageType == StorageType.Xbim)
+        {
+            _sourcePath = null;
+            _cachePath = filePath;
+        }
+        else
+        {
+            _sourcePath = filePath;
+            var xbimPath = Path.ChangeExtension(filePath, ".xbim");
+            try
+            {
+                model.SaveAs(xbimPath, StorageType.Xbim);
+                _cachePath = xbimPath;
+                logger.LogInformation("Cache updated at {CachePath}", xbimPath);
+            }
+            catch (Exception ex)
+            {
+                _cachePath = null;
+                logger.LogWarning(ex, "Failed to update .xbim cache at {CachePath}", xbimPath);
+            }
+        }
+
+        _metadata = BuildMetadata(
+            _sourcePath ?? filePath,
+            _cachePath,
+            _metadata?.LoadedFrom ?? "parsed",
+            model);
+
         return filePath;
     }
 
-    private static ModelMetadata BuildMetadata(string filePath, IfcStore model)
+    private static ModelMetadata BuildMetadata(string filePath, string? cachePath, string loadedFrom, IfcStore model)
     {
         var schema = model.SchemaVersion.ToString();
 
@@ -201,6 +334,6 @@ public sealed class IfcService(ILogger<IfcService> logger)
             counts[typeName] = count + 1;
         }
 
-        return new ModelMetadata(filePath, schema, projectName, siteName, buildingName, counts);
+        return new ModelMetadata(filePath, cachePath, loadedFrom, schema, projectName, siteName, buildingName, counts);
     }
 }

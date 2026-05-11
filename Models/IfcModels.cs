@@ -2,6 +2,8 @@ namespace IfcMcpServer.Models;
 
 public record ModelMetadata(
     string FilePath,
+    string? CachePath,
+    string LoadedFrom,
     string Schema,
     string ProjectName,
     string SiteName,
