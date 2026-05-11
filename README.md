@@ -162,3 +162,7 @@ Tools are discovered automatically via `WithToolsFromAssembly()` -- no manual re
 | [ModelContextProtocol](https://www.nuget.org/packages/ModelContextProtocol) | MCP server SDK (stdio transport, tool discovery) |
 | [Xbim.Essentials](https://www.nuget.org/packages/Xbim.Essentials) | IFC file parsing and querying (IFC2x3, IFC4, IFC4x3) |
 | Microsoft.Extensions.Hosting | Generic host, DI, logging |
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
